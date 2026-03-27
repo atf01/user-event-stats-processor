@@ -17,7 +17,6 @@ func NewScyllaStore(cfg config.ScyllaConfig) (*ScyllaStore, error) {
 	cluster.Timeout = 5 * time.Second
 	cluster.PoolConfig.HostSelectionPolicy = gocql.RoundRobinHostPolicy()
 
-	// SECURE STEP: Only add authenticator if User/Pass are provided
 	if cfg.User != "" && cfg.Pass != "" {
 		cluster.Authenticator = gocql.PasswordAuthenticator{
 			Username: cfg.User,
@@ -32,7 +31,6 @@ func NewScyllaStore(cfg config.ScyllaConfig) (*ScyllaStore, error) {
 	return &ScyllaStore{session: session}, nil
 }
 
-// Close gracefully shuts down the ScyllaDB session
 func (s *ScyllaStore) Close() {
 	if s.session != nil {
 		s.session.Close()
@@ -42,7 +40,6 @@ func (s *ScyllaStore) Close() {
 func (s *ScyllaStore) Update(userID string, eventType string, value int64) error {
 	query := `UPDATE user_stats SET val = val + ? WHERE user_id = ? AND event_type = ?`
 
-	// Return the error from the Exec() call
 	return s.session.Query(query, value, userID, eventType).Exec()
 }
 

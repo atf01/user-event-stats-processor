@@ -42,8 +42,16 @@ ScyllaDB counters only support integers. To support decimal values (like `$15.50
 ### 1. Prerequisites
 - Docker & Docker Compose
 - Go 1.21 or higher
+- create your own .env file to configure your secrets properly
+  ```bash
+  cp .env.example .env
 
 ### 2. Infrastructure Setup
 Spin up the core services in the background:
+ ```bash
+ docker-compose up -d
+
+### 3. run the scyllaDB configuration script
+run the script under /scripts of name init-scylla.sh:
 ```bash
-docker-compose up -d
+docker exec -i scylla-db sh < ./scripts/init-scylla.sh

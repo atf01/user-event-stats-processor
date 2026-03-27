@@ -1,0 +1,15 @@
+app:
+  name: "user-event-processor"
+  port: 8080
+
+scylla:
+  hosts: ["127.0.0.1:9042"]  
+  keyspace: "stats_keyspace"
+  timeout: 5
+
+rabbitmq:
+  queue_name: "events_queue"
+  
+worker_pool:
+  workers: 50
+  buffer_size: 5000

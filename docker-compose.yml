@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  scylla-db:
+    image: scylladb/scylla:latest
+    container_name: scylla-db
+    ports:
+      - "9042:9042"
+    # Back to default: No custom authenticator flag needed for 'cassandra/cassandra'
+    command: --smp 1 --memory 1G --overprovisioned 1
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: rabbitmq
+    environment:
+      # RabbitMQ checks these on startup to create your user
+      - RABBITMQ_DEFAULT_USER=${RABBITMQ_USER}
+      - RABBITMQ_DEFAULT_PASS=${RABBITMQ_PASS}
+    ports:
+      - "5672:5672"
+      - "15672:15672"

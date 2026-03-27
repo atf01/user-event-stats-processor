@@ -1,50 +1,68 @@
 package main
 
 import (
-	"context"
-	"fmt"
+	"encoding/json"
 	"log"
-	"net/http"
-	"os"
-	"os/signal"
-	"syscall"
-	"time"
-
-	"user-event-stats-processor/internal/api"
 	"user-event-stats-processor/internal/config"
-	"user-event-stats-processor/internal/processor"
+	"user-event-stats-processor/internal/models"
 	"user-event-stats-processor/internal/store"
+
+	"github.com/streadway/amqp"
 )
 
 func main() {
 	cfg := config.LoadConfig()
-	fmt.Println(cfg.RabbitMQ.URL)
+
+	// 1. Initialize Scylla with error checking
 	sStore, err := store.NewScyllaStore(cfg.Scylla)
 	if err != nil {
-		log.Fatalf("Failed to connect to ScyllaDB: %v", err)
+		log.Fatalf("🛑 Failed to initialize ScyllaDB: %v", err)
+	}
+	defer sStore.Close()
+
+	// 2. Connect to RabbitMQ with error checking
+	conn, err := amqp.Dial(cfg.RabbitMQ.URL)
+	if err != nil {
+		log.Fatalf("🛑 Failed to connect to RabbitMQ: %v", err)
+	}
+	defer conn.Close()
+
+	// 3. Open Channel with error checking
+	ch, err := conn.Channel()
+	if err != nil {
+		log.Fatalf("🛑 Failed to open a channel: %v", err)
+	}
+	defer ch.Close()
+
+	// 4. Start Consuming
+	msgs, err := ch.Consume(
+		cfg.RabbitMQ.QueueName,
+		"",    // consumer
+		true,  // auto-ack
+		false, // exclusive
+		false, // no-local
+		false, // no-wait
+		nil,   // args
+	)
+	if err != nil {
+		log.Fatalf("🛑 Failed to register a consumer: %v", err)
 	}
 
-	wp := processor.NewWorkerPool(cfg.RabbitMQ.URL, cfg.WorkerPool.BufferSize)
-	wp.Start(cfg.WorkerPool.Workers)
+	log.Println("📥 Consumer is live. Listening for events...")
 
-	h := api.NewHandler(sStore, wp)
-	mux := http.NewServeMux()
-	mux.HandleFunc("/events", h.PostEvent)
-	mux.HandleFunc("/stats", h.GetStats)
+	// 5. Process loop
+	for d := range msgs {
+		var e models.Event
+		if err := json.Unmarshal(d.Body, &e); err != nil {
+			log.Printf("⚠️ Error decoding event: %v", err)
+			continue
+		}
 
-	srv := &http.Server{Addr: fmt.Sprintf(":%d", cfg.App.Port), Handler: mux}
-
-	go func() {
-		log.Printf("🚀 API Server on :%d", cfg.App.Port)
-		srv.ListenAndServe()
-	}()
-
-	stop := make(chan os.Signal, 1)
-	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
-	<-stop
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	srv.Shutdown(ctx)
-	wp.Stop()
+		// Atomic update in Scylla
+		if err := sStore.Update(e.UserID, e.EventType, e.Value); err != nil {
+			log.Printf("❌ Failed to update Scylla for user %s: %v", e.UserID, err)
+		} else {
+			log.Printf("✅ Processed %s for user %s", e.EventType, e.UserID)
+		}
+	}
 }
